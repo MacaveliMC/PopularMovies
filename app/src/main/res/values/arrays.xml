@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="pref_sort_options">
+        <item>@string/order_pop_desc_label</item>
+        <item>@string/order_vote_avg_asc_label</item>
+    </string-array>
+    <string-array name="pref_sort_values">
+        <item>@string/order_pop_desc</item>
+        <item>@string/order_vote_avg_asc</item>
+    </string-array>
+</resources>

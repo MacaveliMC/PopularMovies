@@ -1,0 +1,39 @@
+<resources>
+    <string name="app_name">Popular Movies</string>
+    <string name="title_activity_detail">Movie Details</string>
+    <string name="action_settings">Settings</string>
+    <string name="action_refresh">Refresh</string>
+
+    <string name="urlConnection_request_method" translatable="false">GET</string>
+    <string name="error_closing_stream">Error closing stream</string>
+    <string name="json_exception">JSON Exception: </string>
+    <string name="api_key" translatable="false">INSERT API KEY HERE</string>
+    <string name="pop_desc" translatable="false">popularity.desc</string>
+    <string name="movie_detail_starter_path" translatable="false">http://api.themoviedb.org/3/movie/</string>
+
+    <!-- Strings for settings -->
+    <string name="sort_dialog_title">Choose Sort Method</string>
+
+    <string name="order_pop_desc" translatable="false">popularity.desc</string>
+    <string name="order_pop_desc_label">Popularity</string>
+    <string name="order_vote_avg_asc" translatable="false">vote_average.desc</string>
+    <string name="order_vote_avg_asc_label">Highest Rated</string>
+
+    <string name="sort_order_key">order</string>
+    <string name="sort_order_label">Sort By</string>
+
+    <!-- Strings for detail fragment -->
+    <string name="release_date_text">Release Date:</string>
+    <string name="vote_average_text">Average Score:</string>
+    <string name="slash_ten" translatable="false">/10</string>
+
+    <!-- JSON object strings -->
+    <string name="original_title" translatable="false">original_title</string>
+    <string name="poster_path" translatable="false">poster_path</string>
+    <string name="overview" translatable="false">overview</string>
+    <string name="release_date" translatable="false">release_date</string>
+    <string name="id" translatable="false">id</string>
+    <string name="vote_average" translatable="false">vote_average</string>
+
+
+</resources>
