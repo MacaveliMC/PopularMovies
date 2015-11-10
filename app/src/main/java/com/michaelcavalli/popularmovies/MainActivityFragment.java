@@ -4,15 +4,21 @@
 
 package com.michaelcavalli.popularmovies;
 
+import android.support.v4.app.LoaderManager;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.database.Cursor;
 import android.graphics.Movie;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.preference.PreferenceManager;
 import android.support.v4.app.Fragment;
 import android.os.Bundle;
+import android.support.v4.content.CursorLoader;
+import android.support.v4.content.Loader;
+import android.transition.Fade;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.Menu;
@@ -25,7 +31,9 @@ import android.widget.ArrayAdapter;
 import android.widget.BaseAdapter;
 import android.widget.GridView;
 import android.widget.ImageView;
+import android.widget.ListView;
 
+import com.michaelcavalli.popularmovies.data.MovieContract;
 import com.squareup.picasso.Picasso;
 
 import org.json.JSONArray;
@@ -41,14 +49,48 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Vector;
 
 /**
  * The fragment for the main activity, containing the grid of movies.
  */
-public class MainActivityFragment extends Fragment {
+public class MainActivityFragment extends Fragment implements LoaderManager.LoaderCallbacks<Cursor> {
 
     private final String LOG_TAG = MainActivityFragment.class.getSimpleName();
-    private ImageAdapter movieImageAdapter;
+    private MovieAdapter mMovieAdapter;
+    GridView movieLayout;
+    private int mPosition = GridView.INVALID_POSITION;
+    private static final String SELECTED_KEY = "selected_position";
+    private static final int MOVIE_LOADER = 0;
+
+    // Columns to retrieve from the movie DB
+    private static final String[] MOVIE_COLUMNS = {
+            // In this case the id needs to be fully qualified with a table name, since
+            // the content provider joins the location & weather tables in the background
+            // (both have an _id column)
+            // On the one hand, that's annoying.  On the other, you can search the weather table
+            // using the location set by the user, which is only in the Location table.
+            // So the convenience is worth it.
+            MovieContract.MovieEntry.TABLE_NAME + "." + MovieContract.MovieEntry._ID,
+            MovieContract.MovieEntry.COLUMN_POSTER_PATH,
+            MovieContract.MovieEntry.COLUMN_ORDER
+    };
+
+    // Columns to retrieve from the favorites DB
+    private static final String[] FAVORITE_COLUMNS = {
+            // In this case the id needs to be fully qualified with a table name, since
+            // the content provider joins the location & weather tables in the background
+            // (both have an _id column)
+            // On the one hand, that's annoying.  On the other, you can search the weather table
+            // using the location set by the user, which is only in the Location table.
+            // So the convenience is worth it.
+            MovieContract.FavoriteEntry.TABLE_NAME + "." + MovieContract.FavoriteEntry._ID,
+            MovieContract.FavoriteEntry.COLUMN_POSTER_PATH,
+    };
+
+    static final int COL_MOVIE_ID = 0;
+    static final int COL_POSTER_PATH = 1;
+    static final int COL_ORDER = 2;
 
     /**
      * Constructor for this fragment. Does nothing for now.
@@ -58,17 +100,41 @@ public class MainActivityFragment extends Fragment {
 
     /**
      * Lets the actionbar know the fragment contributes to the menu items.
+     *
      * @param savedInstance
      */
     @Override
-    public void onCreate(Bundle savedInstance){
+    public void onCreate(Bundle savedInstance) {
         super.onCreate(savedInstance);
 
         setHasOptionsMenu(true);
     }
 
     /**
+     * A callback interface that all activities containing this fragment must
+     * implement. This mechanism allows activities to be notified of item
+     * selections.
+     */
+    public interface Callback {
+        /**
+         * DetailFragmentCallback for when an item has been selected.
+         */
+        public void onItemSelected(Uri dateUri);
+    }
+
+    /**
+     * Used to declare the loader
+     * @param savedInstanceState
+     */
+    @Override
+    public void onActivityCreated(Bundle savedInstanceState) {
+        getLoaderManager().initLoader(MOVIE_LOADER, null, this);
+        super.onActivityCreated(savedInstanceState);
+    }
+
+    /**
      * Inflates the menu options for the fragment
+     *
      * @param menu
      * @param inflater
      */
@@ -79,6 +145,7 @@ public class MainActivityFragment extends Fragment {
 
     /**
      * Creates and assigns the custom movie adapter to the grid view layout. Also
+     *
      * @param inflater
      * @param container
      * @param savedInstanceState
@@ -89,12 +156,17 @@ public class MainActivityFragment extends Fragment {
                              Bundle savedInstanceState) {
         View rootView = inflater.inflate(R.layout.fragment_main, container, false);
 
-        // creates the image adapter
-        movieImageAdapter = new ImageAdapter(getActivity(),R.layout.movie_grid,R.id.grid_image, new ArrayList<MovieObject>());
+        if (savedInstanceState != null && savedInstanceState.containsKey(SELECTED_KEY)) {
+            // The listview probably hasn't even been populated yet.  Actually perform the
+            // swapout in onLoadFinished.
+            mPosition = savedInstanceState.getInt(SELECTED_KEY);
+        }
+
+        mMovieAdapter = new MovieAdapter(getActivity(), null, 0);
 
         // assigns the image adapter to the gridview
-        GridView movieLayout = (GridView) rootView.findViewById(R.id.movie_grid);
-        movieLayout.setAdapter(movieImageAdapter);
+        movieLayout = (GridView) rootView.findViewById(R.id.movie_grid);
+        movieLayout.setAdapter(mMovieAdapter);
 
         // the on click listener for the gridview
         movieLayout.setOnItemClickListener(new AdapterView.OnItemClickListener() {
@@ -108,19 +180,28 @@ public class MainActivityFragment extends Fragment {
              * @param id
              */
             @Override
-            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-                MovieObject currentMovie = (MovieObject)movieImageAdapter.getItem(position);
-                String movieInfoPath = getString(R.string.movie_detail_starter_path) + currentMovie.getMovieId() + "?api_key=" + getString(R.string.api_key);
-                Intent startDetailActivity = new Intent(getActivity(), DetailActivity.class).putExtra(Intent.EXTRA_TEXT, movieInfoPath);
-                startActivity(startDetailActivity);
+            public void onItemClick(AdapterView parent, View view, int position, long id) {
+                mPosition = position;
+                Log.v(LOG_TAG, "mPosition: " + mPosition);
+
+                Cursor cursor = (Cursor) parent.getItemAtPosition(position);
+                if (cursor != null) {
+                    ((Callback) getActivity()).onItemSelected(MovieContract.MovieEntry.buildMovieUri(cursor.getInt(COL_MOVIE_ID)));
+                }
+
+                // Implement CALLBACK code
+
             }
         });
+
+
 
         return rootView;
     }
 
     /**
      * Takes action based on menu item selected
+     *
      * @param item
      * @return
      */
@@ -130,13 +211,11 @@ public class MainActivityFragment extends Fragment {
 
         // Refresh item refreshes grid of movies
         if (id == R.id.action_refresh) {
-            Log.v(LOG_TAG,"Refreshing movies");
             updateMovies();
-            Log.v(LOG_TAG,"Movies Refreshed");
             return true;
         } else
 
-        return super.onOptionsItemSelected(item);
+            return super.onOptionsItemSelected(item);
     }
 
     /**
@@ -153,61 +232,40 @@ public class MainActivityFragment extends Fragment {
      * Immediately updates movies with current sort preference upon start.
      */
     @Override
-    public void onStart(){
+    public void onStart() {
         super.onStart();
         updateMovies();
     }
 
-    /**
-     * Custom array adapter to adapt the custom movieObject class to the gridview
-     */
-    public class ImageAdapter extends ArrayAdapter{
-        private Context mContext;
-
-        public ImageAdapter(Context context, int resource, int textViewResourceId, List<MovieObject> objects){
-            super(context, resource, textViewResourceId, objects);
-            mContext = context;
-        }
-
-        /**
-         * Returns the imageview with the correct image in it for the position given
-         * @param position
-         * @param convertView
-         * @param parent
-         * @return
-         */
-        @Override
-        public View getView(int position, View convertView, ViewGroup parent){
-            ImageView view = (ImageView) convertView;
-            if (view == null) {
-                view = new ImageView(mContext);
-            }
-            MovieObject currentMovie;
-            currentMovie = (MovieObject)getItem(position);
-            String url = currentMovie.getMoviePosterPath();
-            Log.v(LOG_TAG, "URL to load: " + url);
-            Picasso.with(mContext).load(url).into(view);
-            view.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            view.setAdjustViewBounds(true);
-            return view;
+    @Override
+    public void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        Log.v(LOG_TAG, "GOING OUT OF STATE");
+        // When tablets rotate, the currently selected list item needs to be saved.
+        // When no item is selected, mPosition will be set to Listview.INVALID_POSITION,
+        // so check for that before storing.
+        if (mPosition != GridView.INVALID_POSITION) {
+            Log.v(LOG_TAG, "SAVING POSITION");
+            outState.putInt(SELECTED_KEY, mPosition);
         }
     }
 
     /**
      * Retrieves the data from the API for the movie grid off of the UI thread
      */
-    public class FetchMovieData extends AsyncTask<String, Void, MovieObject[]>{
+    public class FetchMovieData extends AsyncTask<String, Void, String> {
 
         /**
          * Connects to the API and gathers the movie data, then returns a list of
          * movieObjects with all the movie data
+         *
          * @param params
          * @return
          */
         @Override
-        public MovieObject[] doInBackground(String... params){
+        public String doInBackground(String... params) {
 
-            if(params[0] == null){
+            if (params[0] == null) {
                 return null;
             }
 
@@ -226,7 +284,7 @@ public class MainActivityFragment extends Fragment {
 
             String movieJSON = null;
 
-            try{
+            try {
                 URL url = new URL(builder.toString());
 
                 urlConnection = (HttpURLConnection) url.openConnection();
@@ -236,82 +294,73 @@ public class MainActivityFragment extends Fragment {
                 InputStream inputStream = urlConnection.getInputStream();
                 StringBuffer buffer = new StringBuffer();
                 if (inputStream == null) {
-                    // Nothing to do.
                     return null;
                 }
                 reader = new BufferedReader(new InputStreamReader(inputStream));
 
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    // Since it's JSON, adding a newline isn't necessary (it won't affect parsing)
-                    // But it does make debugging a *lot* easier if you print out the completed
-                    // buffer for debugging.
                     buffer.append(line + "\n");
                 }
 
                 if (buffer.length() == 0) {
-                    // Stream was empty.  No point in parsing.
                     return null;
                 }
                 movieJSON = buffer.toString();
 
-            } catch (IOException e){
+            } catch (IOException e) {
 
             } finally {
-                if(urlConnection != null)
+                if (urlConnection != null)
                     urlConnection.disconnect();
-                if(reader != null)
-                    try{
+                if (reader != null)
+                    try {
                         reader.close();
-                    } catch (IOException e){
+                    } catch (IOException e) {
                         Log.e(LOG_TAG, getString(R.string.error_closing_stream), e);
                     }
             }
-            try{
-                return getMovieDataFromJSON(movieJSON);
-            } catch(JSONException e){
-                Log.v(LOG_TAG,getString(R.string.json_exception) + e.toString());
-                return null;
+            try {
+                if(movieJSON != null)
+                    return getMovieDataFromJSON(movieJSON);
+                else
+                    return null;
+            } catch (JSONException e) {
+                Log.v(LOG_TAG, getString(R.string.json_exception) + e.toString());
             }
+            return null;
         }
 
         /**
          * Clears the movie image adapter and adds the new data
-         * @param result
+         *
+         * @param
          */
         @Override
-        protected void onPostExecute(MovieObject[] result) {
-            if (result != null) {
-                movieImageAdapter.clear();
-                for (MovieObject mObject : result) {
+        protected void onPostExecute(String result) {
 
-                    movieImageAdapter.add(mObject);
-                }
-            }
         }
     }
 
     /**
      * Takes the JSON and extracts all movie data, inserting into movieObjects.
+     *
      * @param movieJSON
      * @return list of movieObjects
      * @throws JSONException
      */
-    private MovieObject[] getMovieDataFromJSON(String movieJSON) throws JSONException{
+    private String getMovieDataFromJSON(String movieJSON) throws JSONException {
 
-        MovieObject[] movieObjectsList;
-        String pathStart = "http://image.tmdb.org/t/p/w185/";
+        String pathStart = getString(R.string.path_start);
 
         JSONObject movieJsonObject = new JSONObject(movieJSON);
-        JSONArray movieJsonList = movieJsonObject.getJSONArray("results");
+        JSONArray movieJsonList = movieJsonObject.getJSONArray(getString(R.string.results_array));
 
-        if(movieJsonList.length() == 0){
-            movieObjectsList = new MovieObject[movieJsonList.length()];
-        } else
-        return null;
+        Vector<ContentValues> cVVector = new Vector<ContentValues>(movieJsonList.length());
 
-        for(int i=0; i<movieJsonList.length(); i++) {
+        for (int i = 0; i < movieJsonList.length(); i++) {
             JSONObject movie = movieJsonList.getJSONObject(i);
+            int number = i;
             String title = movie.getString(getString(R.string.original_title));
             String path = movie.getString(getString(R.string.poster_path));
             String overview = movie.getString(getString(R.string.overview));
@@ -319,11 +368,100 @@ public class MainActivityFragment extends Fragment {
             String movieId = movie.getString(getString(R.string.id));
             String voteAverage = movie.getString(getString(R.string.vote_average));
             path = pathStart + path;
-            movieObjectsList[i] = new MovieObject(title, path, overview, releaseDate, movieId, voteAverage);
+
+
+            // New Database storage method
+            ContentValues movieValues = new ContentValues();
+
+            movieValues.put(MovieContract.MovieEntry.COLUMN_MOVIE_TITLE, title);
+            movieValues.put(MovieContract.MovieEntry.COLUMN_POSTER_PATH, path);
+            movieValues.put(MovieContract.MovieEntry.COLUMN_OVERVIEW, overview);
+            movieValues.put(MovieContract.MovieEntry.COLUMN_RELEASE_DATE, releaseDate);
+            movieValues.put(MovieContract.MovieEntry._ID, movieId);
+            movieValues.put(MovieContract.MovieEntry.COLUMN_ORDER, number);
+            movieValues.put(MovieContract.MovieEntry.COLUMN_VOTE_AVERAGE, voteAverage);
+            movieValues.put(MovieContract.MovieEntry.COLUMN_SORT, PreferenceManager.getDefaultSharedPreferences(getActivity()).getString("order", getString(R.string.order_pop_desc)));
+
+            cVVector.add(movieValues);
         }
 
 
-        return movieObjectsList;
+        // delete old data so we don't build up an endless history
+        String[] selectArgs = new String[]{PreferenceManager.getDefaultSharedPreferences(getActivity()).getString("order", getString(R.string.order_pop_desc))};
+        getActivity().getContentResolver().delete(MovieContract.MovieEntry.CONTENT_URI,
+                MovieContract.MovieEntry.COLUMN_SORT + " = ?", selectArgs);
+
+        if (cVVector.size() > 0) {
+            ContentValues[] cvArray = new ContentValues[cVVector.size()];
+            cVVector.toArray(cvArray);
+            getActivity().getContentResolver().bulkInsert(MovieContract.MovieEntry.CONTENT_URI, cvArray);
+        }
+
+        return "Movie Download Complete. " + cVVector.size() + " Inserted";
+    }
+
+    /**
+     * Returns the cursor loader for the movies that should be loaded into the grid, based on sort.
+     * @param i
+     * @param bundle
+     * @return
+     */
+    @Override
+    public Loader<Cursor> onCreateLoader(int i, Bundle bundle) {
+
+        // This is called when a new Loader needs to be created.  This
+        // fragment only uses one loader, so we don't care about checking the id.
+        // To only show current and future dates, filter the query to return weather only for
+        // dates after or including today.
+
+        // Sort order: Ascending, date.
+        String sortSetting = PreferenceManager.getDefaultSharedPreferences(getActivity()).getString("order", getString(R.string.order_pop_desc));
+
+        String sortOrder;
+        Uri searchUri;
+        if(sortSetting.equals(getString(R.string.order_favorites))){
+            sortOrder = null;
+            searchUri = MovieContract.FavoriteEntry.CONTENT_URI;
+            return new CursorLoader(getActivity(),
+                    searchUri,
+                    FAVORITE_COLUMNS,
+                    null,
+                    null,
+                    sortOrder);
+        } else{
+            sortOrder = MovieContract.MovieEntry.COLUMN_ORDER + " ASC";
+            searchUri = MovieContract.MovieEntry.buildMovieWithSort(sortSetting);
+            return new CursorLoader(getActivity(),
+                    searchUri,
+                    MOVIE_COLUMNS,
+                    null,
+                    null,
+                    sortOrder);
+        }
+    }
+
+    /**
+     * Swaps in the correct cursor into the adapter.  Also may scroll to a previous position.
+     * @param cursorLoader
+     * @param data
+     */
+    @Override
+    public void onLoadFinished(Loader<Cursor> cursorLoader, Cursor data) {
+        mMovieAdapter.swapCursor(data);
+        if (mPosition != GridView.INVALID_POSITION) {
+            // If we don't need to restart the loader, and there's a desired position to restore
+            // to, do so now.
+            movieLayout.smoothScrollToPosition(mPosition);
+        }
+    }
+
+    /**
+     * Changes the adapter cursor to null
+     * @param loader
+     */
+    @Override
+    public void onLoaderReset(Loader<Cursor> loader) {
+        mMovieAdapter.swapCursor(null);
     }
 }
 

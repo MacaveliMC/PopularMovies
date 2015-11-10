@@ -38,7 +38,6 @@ public class SettingsFragment extends PreferenceFragment implements Preference.O
         // Load the preferences from an XML resource
         addPreferencesFromResource(R.xml.pref_general);
 
-
         bindPreferenceSummaryToValue(findPreference(getString(R.string.sort_order_key)));
 
     }
@@ -61,7 +60,7 @@ public class SettingsFragment extends PreferenceFragment implements Preference.O
     }
 
     /**
-     *
+     * Change the summary when a preference changes
      * @param preference
      * @param value
      * @return
