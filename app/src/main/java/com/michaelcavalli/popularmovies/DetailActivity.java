@@ -16,7 +16,7 @@ import android.util.Log;
 /**
  * Detail Activity for the detail screen which appears upon clicking on a movie poster from the main activity
  */
-public class DetailActivity extends ActionBarActivity implements ViewPager.OnPageChangeListener {
+public class DetailActivity extends ActionBarActivity implements ViewPager.OnPageChangeListener, DetailFragment.CallBackInterface, ReviewFragment.CallBackInterface {
 
     private final String LOG_TAG = DetailActivity.class.getSimpleName();
     private DetailFragment dFragment;
@@ -39,8 +39,11 @@ public class DetailActivity extends ActionBarActivity implements ViewPager.OnPag
         Bundle Rarguments = new Bundle();
         Bundle Targuments = new Bundle();
         Darguments.putParcelable(DetailFragment.DETAIL_URI, getIntent().getData());
+        Darguments.putBoolean(DetailFragment.TWO_PANE, false);
         Rarguments.putParcelable(ReviewFragment.REVIEW_URI, getIntent().getData());
+        Rarguments.putBoolean(ReviewFragment.TWO_PANE, false);
         Targuments.putParcelable(TrailerFragment.TRAILER_URI, getIntent().getData());
+        Targuments.putBoolean(TrailerFragment.TWO_PANE, false);
 
         // Create detail fragment
         dFragment = new DetailFragment();
@@ -58,6 +61,20 @@ public class DetailActivity extends ActionBarActivity implements ViewPager.OnPag
         vPager = (ViewPager) findViewById(R.id.viewPager);
         vPager.setAdapter(new MyPagerAdapter(getSupportFragmentManager()));
         vPager.setOnPageChangeListener(this);
+    }
+
+    public void clickOnReviews(){
+        vPager.setCurrentItem(1);
+    }
+
+    @Override
+    public void clickOnDetails() {
+        vPager.setCurrentItem(0);
+    }
+
+    @Override
+    public void clickOnTrailers() {
+        vPager.setCurrentItem(2);
     }
 
     /**
@@ -101,7 +118,7 @@ public class DetailActivity extends ActionBarActivity implements ViewPager.OnPag
 
     @Override
     public void onPageScrolled(int position, float positionOffset, int positionOffsetPixels) {
-
+        // Not used Currently
     }
 
     /**

@@ -26,6 +26,7 @@
                 android:textIsSelectable="true" />
 
             <ImageView
+                android:id="@+id/go_to_reviews"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:src="@drawable/ic_keyboard_arrow_right_white_48dp"/>

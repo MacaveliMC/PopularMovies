@@ -6,16 +6,17 @@ package com.michaelcavalli.popularmovies;
 
 import android.content.Intent;
 import android.net.Uri;
-import android.support.v4.app.Fragment;
 import android.support.v7.app.ActionBarActivity;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.View;
 
 /**
  * The main activity when the device starts up.  Displays the fragment with the movie grid.
  */
-public class MainActivity extends ActionBarActivity implements MainActivityFragment.Callback, DetailFragment.CallbackDetail, ReviewFragment.CallbackDetailFromReview, ReviewFragment.CallbackTrailerFromReview, TrailerFragment.CallbackReviewFromTrailer{
+public class MainActivity extends ActionBarActivity implements MainActivityFragment.Callback, DetailFragment.CallbackDetail, ReviewFragment.CallbackReview {
 
     private final String LOG_TAG = MainActivity.class.getSimpleName();
     private boolean mTwoPane;
@@ -25,6 +26,7 @@ public class MainActivity extends ActionBarActivity implements MainActivityFragm
 
     /**
      * Sets the layout to activity_main
+     *
      * @param savedInstanceState
      */
     @Override
@@ -32,10 +34,16 @@ public class MainActivity extends ActionBarActivity implements MainActivityFragm
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        if(findViewById(R.id.movie_detail_container) != null){
+        if (findViewById(R.id.movie_detail_container) != null) {
+            Log.v(LOG_TAG, "TWO PANE IS TRUE");
             mTwoPane = true;
-            if(savedInstanceState == null){
-                //getSupportFragmentManager().beginTransaction().replace(R.id.movie_detail_container, new DetailFragment(), DETAILFRAGMENT_TAG).commit();
+            if (savedInstanceState == null) {
+
+                DetailFragment dFragment = new DetailFragment();
+                Bundle dArguments = new Bundle();
+                dArguments.putBoolean(DetailFragment.TWO_PANE, true);
+                dFragment.setArguments(dArguments);
+                getSupportFragmentManager().beginTransaction().replace(R.id.movie_detail_container, dFragment, DETAILFRAGMENT_TAG).commit();
             }
         } else {
             mTwoPane = false;
@@ -46,13 +54,15 @@ public class MainActivity extends ActionBarActivity implements MainActivityFragm
 
     /**
      * Callback method when an item is selected on the gridview in the main fragment
+     *
      * @param contentUri
      */
     @Override
-    public void onItemSelected(Uri contentUri) {
-        if(mTwoPane){
+    public void onItemSelected(Uri contentUri, View view) {
+        if (mTwoPane) {
             Bundle args = new Bundle();
             args.putParcelable(DetailFragment.DETAIL_URI, contentUri);
+            args.putBoolean(DetailFragment.TWO_PANE, true);
 
             DetailFragment fragment = new DetailFragment();
             fragment.setArguments(args);
@@ -62,22 +72,23 @@ public class MainActivity extends ActionBarActivity implements MainActivityFragm
                     .commit();
 
         } else {
-
-            Intent intent = new Intent(this, DetailActivity.class)
-                    .setData(contentUri);
-            startActivity(intent);
+                Intent intent = new Intent(this, DetailActivity.class)
+                        .setData(contentUri);
+                startActivity(intent);
         }
     }
 
     /**
      * Callack method when the arrow to the review screen on the detail screen is clicked
+     *
      * @param movieUri
      */
     @Override
-    public void reviewButtonSelected(Uri movieUri){
-        if(mTwoPane) {
+    public void reviewButtonSelected(Uri movieUri) {
+        if (mTwoPane) {
             Bundle args = new Bundle();
             args.putParcelable(DetailFragment.DETAIL_URI, movieUri);
+            args.putBoolean(ReviewFragment.TWO_PANE, true);
 
             ReviewFragment fragment = new ReviewFragment();
             fragment.setArguments(args);
@@ -91,13 +102,15 @@ public class MainActivity extends ActionBarActivity implements MainActivityFragm
 
     /**
      * Callback method when the arrow to the detail screen on the review screen is clicked
+     *
      * @param movieUri
      */
     @Override
-    public void detailButtonSelected(Uri movieUri){
-        if(mTwoPane) {
+    public void detailButtonSelected(Uri movieUri) {
+        if (mTwoPane) {
             Bundle args = new Bundle();
             args.putParcelable(DetailFragment.DETAIL_URI, movieUri);
+            args.putBoolean(DetailFragment.TWO_PANE, true);
 
             DetailFragment fragment = new DetailFragment();
             fragment.setArguments(args);
@@ -110,13 +123,15 @@ public class MainActivity extends ActionBarActivity implements MainActivityFragm
 
     /**
      * Callback method for the arrow to the trailer screen on the review screen is clicked
+     *
      * @param movieUri
      */
     @Override
-    public void trailerButtonSelected(Uri movieUri){
-        if(mTwoPane) {
+    public void trailerButtonSelected(Uri movieUri) {
+        if (mTwoPane) {
             Bundle args = new Bundle();
             args.putParcelable(TrailerFragment.TRAILER_URI, movieUri);
+            args.putBoolean(TrailerFragment.TWO_PANE, true);
 
             TrailerFragment fragment = new TrailerFragment();
             fragment.setArguments(args);
@@ -130,24 +145,24 @@ public class MainActivity extends ActionBarActivity implements MainActivityFragm
     /**
      * Callback method for the arrow to the review screen from the trailer screen is clicked.
      * @param movieUri
-     */
-    @Override
-    public void reviewButtonSelectedFromTrailer(Uri movieUri){
-        if(mTwoPane) {
-            Bundle args = new Bundle();
-            args.putParcelable(ReviewFragment.REVIEW_URI, movieUri);
+     *
+     @Override public void reviewButtonSelectedFromTrailer(Uri movieUri){
+     if(mTwoPane) {
+     Bundle args = new Bundle();
+     args.putParcelable(ReviewFragment.REVIEW_URI, movieUri);
 
-            ReviewFragment fragment = new ReviewFragment();
-            fragment.setArguments(args);
+     ReviewFragment fragment = new ReviewFragment();
+     fragment.setArguments(args);
 
-            getSupportFragmentManager().beginTransaction()
-                    .replace(R.id.movie_detail_container, fragment, REVIEWFRAGMENT_TAG)
-                    .commit();
-        }
-    }
+     getSupportFragmentManager().beginTransaction()
+     .replace(R.id.movie_detail_container, fragment, REVIEWFRAGMENT_TAG)
+     .commit();
+     }
+     }*/
 
     /**
      * Creates the options menu from the menu_main file
+     *
      * @param menu
      * @return
      */
@@ -159,6 +174,7 @@ public class MainActivity extends ActionBarActivity implements MainActivityFragm
 
     /**
      * Decides what to do when a menu option is selected
+     *
      * @param item
      * @return
      */

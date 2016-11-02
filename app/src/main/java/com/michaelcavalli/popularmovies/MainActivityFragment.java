@@ -4,6 +4,9 @@
 
 package com.michaelcavalli.popularmovies;
 
+import android.app.Activity;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.support.v4.app.LoaderManager;
 import android.content.ContentValues;
 import android.content.Context;
@@ -58,6 +61,7 @@ public class MainActivityFragment extends Fragment implements LoaderManager.Load
 
     private final String LOG_TAG = MainActivityFragment.class.getSimpleName();
     private MovieAdapter mMovieAdapter;
+    private Callback myCallBack;
     GridView movieLayout;
     private int mPosition = GridView.INVALID_POSITION;
     private static final String SELECTED_KEY = "selected_position";
@@ -65,12 +69,6 @@ public class MainActivityFragment extends Fragment implements LoaderManager.Load
 
     // Columns to retrieve from the movie DB
     private static final String[] MOVIE_COLUMNS = {
-            // In this case the id needs to be fully qualified with a table name, since
-            // the content provider joins the location & weather tables in the background
-            // (both have an _id column)
-            // On the one hand, that's annoying.  On the other, you can search the weather table
-            // using the location set by the user, which is only in the Location table.
-            // So the convenience is worth it.
             MovieContract.MovieEntry.TABLE_NAME + "." + MovieContract.MovieEntry._ID,
             MovieContract.MovieEntry.COLUMN_POSTER_PATH,
             MovieContract.MovieEntry.COLUMN_ORDER
@@ -78,25 +76,15 @@ public class MainActivityFragment extends Fragment implements LoaderManager.Load
 
     // Columns to retrieve from the favorites DB
     private static final String[] FAVORITE_COLUMNS = {
-            // In this case the id needs to be fully qualified with a table name, since
-            // the content provider joins the location & weather tables in the background
-            // (both have an _id column)
-            // On the one hand, that's annoying.  On the other, you can search the weather table
-            // using the location set by the user, which is only in the Location table.
-            // So the convenience is worth it.
             MovieContract.FavoriteEntry.TABLE_NAME + "." + MovieContract.FavoriteEntry._ID,
             MovieContract.FavoriteEntry.COLUMN_POSTER_PATH,
     };
 
+    // Pointers to String arrays
     static final int COL_MOVIE_ID = 0;
     static final int COL_POSTER_PATH = 1;
     static final int COL_ORDER = 2;
 
-    /**
-     * Constructor for this fragment. Does nothing for now.
-     */
-    public MainActivityFragment() {
-    }
 
     /**
      * Lets the actionbar know the fragment contributes to the menu items.
@@ -110,6 +98,12 @@ public class MainActivityFragment extends Fragment implements LoaderManager.Load
         setHasOptionsMenu(true);
     }
 
+    @Override
+    public void onAttach(Activity activity) {
+        myCallBack = (Callback) activity;
+        super.onAttach(activity);
+    }
+
     /**
      * A callback interface that all activities containing this fragment must
      * implement. This mechanism allows activities to be notified of item
@@ -119,11 +113,12 @@ public class MainActivityFragment extends Fragment implements LoaderManager.Load
         /**
          * DetailFragmentCallback for when an item has been selected.
          */
-        public void onItemSelected(Uri dateUri);
+        public void onItemSelected(Uri dateUri, View view);
     }
 
     /**
      * Used to declare the loader
+     *
      * @param savedInstanceState
      */
     @Override
@@ -182,18 +177,14 @@ public class MainActivityFragment extends Fragment implements LoaderManager.Load
             @Override
             public void onItemClick(AdapterView parent, View view, int position, long id) {
                 mPosition = position;
-                Log.v(LOG_TAG, "mPosition: " + mPosition);
 
                 Cursor cursor = (Cursor) parent.getItemAtPosition(position);
                 if (cursor != null) {
-                    ((Callback) getActivity()).onItemSelected(MovieContract.MovieEntry.buildMovieUri(cursor.getInt(COL_MOVIE_ID)));
+                    myCallBack.onItemSelected(MovieContract.MovieEntry.buildMovieUri(cursor.getInt(COL_MOVIE_ID)), view);
                 }
-
-                // Implement CALLBACK code
 
             }
         });
-
 
 
         return rootView;
@@ -234,20 +225,22 @@ public class MainActivityFragment extends Fragment implements LoaderManager.Load
     @Override
     public void onStart() {
         super.onStart();
-        updateMovies();
+        ConnectivityManager cm = (ConnectivityManager) getActivity().getSystemService(Context.CONNECTIVITY_SERVICE);
+
+        NetworkInfo activeNetwork = cm.getActiveNetworkInfo();
+
+        if (activeNetwork != null && activeNetwork.isConnectedOrConnecting())
+            updateMovies();
     }
 
     @Override
     public void onSaveInstanceState(Bundle outState) {
-        super.onSaveInstanceState(outState);
-        Log.v(LOG_TAG, "GOING OUT OF STATE");
-        // When tablets rotate, the currently selected list item needs to be saved.
-        // When no item is selected, mPosition will be set to Listview.INVALID_POSITION,
-        // so check for that before storing.
+        // Save position for rotating
         if (mPosition != GridView.INVALID_POSITION) {
-            Log.v(LOG_TAG, "SAVING POSITION");
             outState.putInt(SELECTED_KEY, mPosition);
         }
+
+        super.onSaveInstanceState(outState);
     }
 
     /**
@@ -321,7 +314,7 @@ public class MainActivityFragment extends Fragment implements LoaderManager.Load
                     }
             }
             try {
-                if(movieJSON != null)
+                if (movieJSON != null)
                     return getMovieDataFromJSON(movieJSON);
                 else
                     return null;
@@ -402,6 +395,7 @@ public class MainActivityFragment extends Fragment implements LoaderManager.Load
 
     /**
      * Returns the cursor loader for the movies that should be loaded into the grid, based on sort.
+     *
      * @param i
      * @param bundle
      * @return
@@ -419,7 +413,7 @@ public class MainActivityFragment extends Fragment implements LoaderManager.Load
 
         String sortOrder;
         Uri searchUri;
-        if(sortSetting.equals(getString(R.string.order_favorites))){
+        if (sortSetting.equals(getString(R.string.order_favorites))) {
             sortOrder = null;
             searchUri = MovieContract.FavoriteEntry.CONTENT_URI;
             return new CursorLoader(getActivity(),
@@ -428,7 +422,7 @@ public class MainActivityFragment extends Fragment implements LoaderManager.Load
                     null,
                     null,
                     sortOrder);
-        } else{
+        } else {
             sortOrder = MovieContract.MovieEntry.COLUMN_ORDER + " ASC";
             searchUri = MovieContract.MovieEntry.buildMovieWithSort(sortSetting);
             return new CursorLoader(getActivity(),
@@ -442,6 +436,7 @@ public class MainActivityFragment extends Fragment implements LoaderManager.Load
 
     /**
      * Swaps in the correct cursor into the adapter.  Also may scroll to a previous position.
+     *
      * @param cursorLoader
      * @param data
      */
@@ -457,6 +452,7 @@ public class MainActivityFragment extends Fragment implements LoaderManager.Load
 
     /**
      * Changes the adapter cursor to null
+     *
      * @param loader
      */
     @Override

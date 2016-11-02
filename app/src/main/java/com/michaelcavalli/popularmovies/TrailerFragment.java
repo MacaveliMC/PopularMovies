@@ -4,9 +4,14 @@
 
 package com.michaelcavalli.popularmovies;
 
+import android.app.Activity;
+import android.content.ContentResolver;
 import android.content.ContentValues;
+import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
@@ -15,8 +20,13 @@ import android.support.v4.app.Fragment;
 import android.support.v4.app.LoaderManager;
 import android.support.v4.content.CursorLoader;
 import android.support.v4.content.Loader;
+import android.support.v4.view.MenuItemCompat;
+import android.support.v7.widget.ShareActionProvider;
 import android.util.Log;
 import android.view.LayoutInflater;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.AdapterView;
@@ -45,11 +55,20 @@ public class TrailerFragment extends Fragment implements LoaderManager.LoaderCal
 
     private static final String LOG_TAG = TrailerFragment.class.getSimpleName();
     static final String TRAILER_URI = "URI";
+    static final String TWO_PANE = "TWO_PANE";
     private Uri trailerUri;
     ListView trailerList;
     String movieID;
     TrailerAdapter mTrailerAdapter;
+    ContentResolver myContentResolver;
+    private ShareActionProvider mShareActionProvider;
     View rootView;
+    private boolean mTwoPane;
+
+    // Callback to detail activity for single pane
+    private DetailFragment.CallBackInterface myCallBack;
+    // Callback to main activity for two pane
+    private DetailFragment.CallbackDetail callBackTrailer;
 
     // Loader number
     private static final int TRAILER_LOADER = 2;
@@ -74,6 +93,7 @@ public class TrailerFragment extends Fragment implements LoaderManager.LoaderCal
 
     /**
      * Creating the layout for the fragment
+     *
      * @param inflater
      * @param container
      * @param savedInstanceState
@@ -84,13 +104,29 @@ public class TrailerFragment extends Fragment implements LoaderManager.LoaderCal
         Bundle arguments = getArguments();
         if (arguments != null) {
             trailerUri = arguments.getParcelable(TRAILER_URI);
-            Log.v(LOG_TAG, "GOT BUNDLE");
+            mTwoPane = arguments.getBoolean(TWO_PANE);
+        }
+
+        if (mTwoPane) {
+            try {
+                callBackTrailer = (DetailFragment.CallbackDetail) getActivity();
+            } catch (ClassCastException e) {
+                throw new ClassCastException(getActivity().toString() + " must implement CallBackDetail interface!");
+            }
+        } else {
+            try {
+                myCallBack = (DetailFragment.CallBackInterface) getActivity();
+            } catch (ClassCastException e) {
+                throw new ClassCastException(getActivity().toString() + " must implement CallBackInterface!");
+            }
         }
 
 
+        myContentResolver = getActivity().getContentResolver();
         movieID = MovieContract.MovieEntry.getIdFromUri(trailerUri);
 
         rootView = inflater.inflate(R.layout.trailer_fragment, container, false);
+        rootView.setVisibility(View.INVISIBLE);
 
         toReviews = (ImageView) rootView.findViewById(R.id.go_to_reviews_from_trailers);
 
@@ -99,10 +135,14 @@ public class TrailerFragment extends Fragment implements LoaderManager.LoaderCal
         trailerList.setAdapter(mTrailerAdapter);
 
         // Set the click listener for the arrow going back to the reviews screen on tablets
-        toReviews.setOnClickListener(new View.OnClickListener(){
+        toReviews.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                ((CallbackReviewFromTrailer) getActivity()).reviewButtonSelectedFromTrailer(trailerUri);
+                if (mTwoPane) {
+                    callBackTrailer.reviewButtonSelected(trailerUri);
+                } else {
+                    myCallBack.clickOnReviews();
+                }
             }
         });
 
@@ -121,7 +161,7 @@ public class TrailerFragment extends Fragment implements LoaderManager.LoaderCal
                 youtubeIntent.setData(ytUri);
 
 
-                if(youtubeIntent.resolveActivity(getActivity().getPackageManager()) != null){
+                if (youtubeIntent.resolveActivity(getActivity().getPackageManager()) != null) {
                     startActivity(youtubeIntent);
                 } else {
                     Log.d(LOG_TAG, "Couldn't call " + ytUri.toString() + ", no apps installdd!");
@@ -132,6 +172,7 @@ public class TrailerFragment extends Fragment implements LoaderManager.LoaderCal
 
         return rootView;
     }
+
 
     /**
      * A callback interface that all activities containing this fragment must
@@ -147,6 +188,7 @@ public class TrailerFragment extends Fragment implements LoaderManager.LoaderCal
 
     /**
      * Initiate the loader
+     *
      * @param savedInstanceState
      */
     @Override
@@ -157,6 +199,7 @@ public class TrailerFragment extends Fragment implements LoaderManager.LoaderCal
 
     /**
      * Return the cursor loader for the adapter
+     *
      * @param id
      * @param args
      * @return
@@ -176,16 +219,19 @@ public class TrailerFragment extends Fragment implements LoaderManager.LoaderCal
 
     /**
      * Swap the cursor into the adapter to load the info
+     *
      * @param loader
      * @param data
      */
     @Override
     public void onLoadFinished(Loader<Cursor> loader, Cursor data) {
         mTrailerAdapter.swapCursor(data);
+        rootView.setVisibility(View.VISIBLE);
     }
 
     /**
      * Swap the cursor in the adapter for null
+     *
      * @param loader
      */
     @Override
@@ -208,14 +254,18 @@ public class TrailerFragment extends Fragment implements LoaderManager.LoaderCal
     @Override
     public void onStart() {
         super.onStart();
-        updateTrailers();
+        ConnectivityManager cm = (ConnectivityManager) getActivity().getSystemService(Context.CONNECTIVITY_SERVICE);
+
+        NetworkInfo activeNetwork = cm.getActiveNetworkInfo();
+
+        if (activeNetwork != null && activeNetwork.isConnectedOrConnecting())
+            updateTrailers();
     }
 
     /**
      * Retrieves the data from the API for the movie grid off of the UI thread
      */
     public class FetchTrailerData extends AsyncTask<Void, Void, String> {
-
 
 
         /**
@@ -333,18 +383,19 @@ public class TrailerFragment extends Fragment implements LoaderManager.LoaderCal
 
         // delete old data so we don't build up an endless history
         String[] selectArgs = new String[]{movieID};
-        getActivity().getContentResolver().delete(MovieContract.TrailerEntry.CONTENT_URI,
-                MovieContract.TrailerEntry.COLUMN_MOVIE_ID + " = ?", selectArgs);
+        if (myContentResolver != null)
+            myContentResolver.delete(MovieContract.TrailerEntry.CONTENT_URI,
+                    MovieContract.TrailerEntry.COLUMN_MOVIE_ID + " = ?", selectArgs);
 
         if (cVVector.size() > 0) {
             ContentValues[] cvArray = new ContentValues[cVVector.size()];
             cVVector.toArray(cvArray);
-            getActivity().getContentResolver().bulkInsert(MovieContract.TrailerEntry.CONTENT_URI, cvArray);
+            if (myContentResolver != null)
+                myContentResolver.bulkInsert(MovieContract.TrailerEntry.CONTENT_URI, cvArray);
         }
 
         return "Review Download Complete. " + cVVector.size() + " Inserted";
     }
-
 
 
 }

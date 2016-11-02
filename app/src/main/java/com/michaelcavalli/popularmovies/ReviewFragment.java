@@ -4,8 +4,13 @@
 
 package com.michaelcavalli.popularmovies;
 
+import android.app.Activity;
+import android.content.ContentResolver;
 import android.content.ContentValues;
+import android.content.Context;
 import android.database.Cursor;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
@@ -43,11 +48,20 @@ public class ReviewFragment extends Fragment implements LoaderManager.LoaderCall
 
     private static final String LOG_TAG = ReviewFragment.class.getSimpleName();
     static final String REVIEW_URI = "URI";
+    static final String TWO_PANE = "TWO_PANE";
     private Uri reviewUri;
     ListView reviewList;
     String movieID;
     ReviewAdapter mReviewAdapter;
+    ContentResolver myContentResolver;
     View rootView;
+    private boolean mTwoPane;
+
+
+    // Callback to detail activity for single pane
+    private CallBackInterface myCallBack;
+    // Callback to main activity for two pane
+    private CallbackReview callBackReview;
 
     // Loader number
     private static final int REVIEW_LOADER = 1;
@@ -71,6 +85,7 @@ public class ReviewFragment extends Fragment implements LoaderManager.LoaderCall
 
     /**
      * Set up the layout of the fragment
+     *
      * @param inflater
      * @param container
      * @param savedInstanceState
@@ -81,11 +96,28 @@ public class ReviewFragment extends Fragment implements LoaderManager.LoaderCall
         Bundle arguments = getArguments();
         if (arguments != null) {
             reviewUri = arguments.getParcelable(REVIEW_URI);
+            mTwoPane = arguments.getBoolean(TWO_PANE);
         }
 
+        if (mTwoPane) {
+            try {
+                callBackReview = (CallbackReview) getActivity();
+            } catch (ClassCastException e) {
+                throw new ClassCastException(getActivity().toString() + " must implement CallBackDetail interface!");
+            }
+        } else {
+            try {
+                myCallBack = (CallBackInterface) getActivity();
+            } catch (ClassCastException e) {
+                throw new ClassCastException(getActivity().toString() + " must implement CallBackInterface!");
+            }
+        }
+
+        myContentResolver = getActivity().getContentResolver();
         movieID = MovieContract.MovieEntry.getIdFromUri(reviewUri);
 
         rootView = inflater.inflate(R.layout.review_fragment, container, false);
+        rootView.setVisibility(View.INVISIBLE);
 
         toDetails = (ImageView) rootView.findViewById(R.id.go_to_details_from_reviews);
         toTrailers = (ImageView) rootView.findViewById(R.id.go_to_trailers_from_reviews);
@@ -98,15 +130,23 @@ public class ReviewFragment extends Fragment implements LoaderManager.LoaderCall
         toDetails.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                ((CallbackDetailFromReview) getActivity()).detailButtonSelected(reviewUri);
+                if (mTwoPane) {
+                    callBackReview.detailButtonSelected(reviewUri);
+                } else {
+                    myCallBack.clickOnDetails();
+                }
             }
         });
 
         // Create a click listener for the arrow going to the trailers fragment
-        toTrailers.setOnClickListener(new View.OnClickListener(){
+        toTrailers.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                ((CallbackTrailerFromReview) getActivity()).trailerButtonSelected(reviewUri);
+                if (mTwoPane) {
+                    callBackReview.trailerButtonSelected(reviewUri);
+                } else {
+                    myCallBack.clickOnTrailers();
+                }
             }
         });
 
@@ -115,32 +155,25 @@ public class ReviewFragment extends Fragment implements LoaderManager.LoaderCall
 
     }
 
+
     /**
      * A callback interface that all activities containing this fragment must
      * implement. This mechanism allows activities to be notified of item
      * selections.
      */
-    public interface CallbackDetailFromReview {
+    public interface CallbackReview {
         /**
          * When the arrow is clicked to go to the detail screen
          */
         public void detailButtonSelected(Uri movieUri);
-    }
 
-    /**
-     * A callback interface that all activities containing this fragment must
-     * implement. This mechanism allows activities to be notified of item
-     * selections.
-     */
-    public interface CallbackTrailerFromReview {
-        /**
-         * When the arrow is clicked to go to the trailer screen
-         */
         public void trailerButtonSelected(Uri movieUri);
     }
 
+
     /**
      * Initiates the loader
+     *
      * @param savedInstanceState
      */
     @Override
@@ -151,6 +184,7 @@ public class ReviewFragment extends Fragment implements LoaderManager.LoaderCall
 
     /**
      * Returns the cursorloader for the adapter
+     *
      * @param id
      * @param args
      * @return
@@ -170,16 +204,19 @@ public class ReviewFragment extends Fragment implements LoaderManager.LoaderCall
 
     /**
      * Swaps out the cursor for the adapter
+     *
      * @param loader
      * @param data
      */
     @Override
     public void onLoadFinished(Loader<Cursor> loader, Cursor data) {
         mReviewAdapter.swapCursor(data);
+        rootView.setVisibility(View.VISIBLE);
     }
 
     /**
      * Swap out the cursor in the adapter for null
+     *
      * @param loader
      */
     @Override
@@ -202,14 +239,19 @@ public class ReviewFragment extends Fragment implements LoaderManager.LoaderCall
     @Override
     public void onStart() {
         super.onStart();
-        updateReviews();
+
+        ConnectivityManager cm = (ConnectivityManager) getActivity().getSystemService(Context.CONNECTIVITY_SERVICE);
+
+        NetworkInfo activeNetwork = cm.getActiveNetworkInfo();
+
+        if (activeNetwork != null && activeNetwork.isConnectedOrConnecting())
+            updateReviews();
     }
 
     /**
      * Retrieves the data from the API for the movie grid off of the UI thread
      */
     public class FetchReviewData extends AsyncTask<Void, Void, String> {
-
 
 
         /**
@@ -332,15 +374,23 @@ public class ReviewFragment extends Fragment implements LoaderManager.LoaderCall
 
         // delete old data so we don't build up an endless history
         String[] selectArgs = new String[]{movieID};
-        getActivity().getContentResolver().delete(MovieContract.ReviewEntry.CONTENT_URI,
-                MovieContract.ReviewEntry.COLUMN_MOVIE_ID + " = ?", selectArgs);
+        if (myContentResolver != null)
+            myContentResolver.delete(MovieContract.ReviewEntry.CONTENT_URI,
+                    MovieContract.ReviewEntry.COLUMN_MOVIE_ID + " = ?", selectArgs);
 
         if (cVVector.size() > 0) {
             ContentValues[] cvArray = new ContentValues[cVVector.size()];
             cVVector.toArray(cvArray);
-            getActivity().getContentResolver().bulkInsert(MovieContract.ReviewEntry.CONTENT_URI, cvArray);
+            if (myContentResolver != null)
+                myContentResolver.bulkInsert(MovieContract.ReviewEntry.CONTENT_URI, cvArray);
         }
 
         return "Review Download Complete. " + cVVector.size() + " Inserted";
+    }
+
+    public interface CallBackInterface {
+        public void clickOnDetails();
+
+        public void clickOnTrailers();
     }
 }

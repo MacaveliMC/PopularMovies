@@ -4,6 +4,8 @@
 
 package com.michaelcavalli.popularmovies;
 
+import android.app.Activity;
+import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.res.Configuration;
 import android.support.v4.app.LoaderManager;
@@ -46,11 +48,17 @@ import java.util.Vector;
  */
 public class DetailFragment extends Fragment implements LoaderManager.LoaderCallbacks<Cursor> {
     private static final String LOG_TAG = DetailFragment.class.getSimpleName();
-    static final String DETAIL_URI = "URI";
-    private Uri movieUri;
-    private boolean mTwoPane;
-    private boolean isFavorite;
+    static final String DETAIL_URI = "URI";     // For retrieving the sent URI
+    static final String TWO_PANE = "TWO_PANE";  // For retrieving the info on two pane mode
+    private Uri movieUri;                       // The URI for this movie
+    private boolean mTwoPane;                   // true if in two pane mode
+    private boolean isFavorite;                 // True if this movie is in favorites
     View rootView;
+
+    // Callback to detail activity for single pane
+    private CallBackInterface myCallBack;
+    // Callback to main activity for two pane
+    private CallbackDetail callBackDetail;
 
     // Loader number
     private static final int DETAIL_LOADER = 0;
@@ -66,6 +74,7 @@ public class DetailFragment extends Fragment implements LoaderManager.LoaderCall
             MovieContract.MovieEntry.COLUMN_ORDER
     };
 
+    // Pointers to the columns for movie details
     static final int COL_ID = 0;
     static final int COL_TITLE = 1;
     static final int COL_POSTER_PATH = 2;
@@ -107,10 +116,31 @@ public class DetailFragment extends Fragment implements LoaderManager.LoaderCall
 
         Bundle arguments = getArguments();
         if (arguments != null) {
+            Log.v(LOG_TAG, "GETTING ARGUMENTS");
             movieUri = arguments.getParcelable(DETAIL_URI);
+            mTwoPane = arguments.getBoolean(TWO_PANE);
         }
 
+        // If we're in two pane mode, used the callBackDetail interface
+        if (mTwoPane) {
+            try {
+                callBackDetail = (CallbackDetail) getActivity();
+            } catch (ClassCastException e) {
+                throw new ClassCastException(getActivity().toString() + " must implement CallBackDetail interface!");
+            }
+        }
+        // If we're in one pane mode, use the myCallBack interface
+        else {
+            try {
+                myCallBack = (CallBackInterface) getActivity();
+            } catch (ClassCastException e) {
+                throw new ClassCastException(getActivity().toString() + " must implement CallBackInterface!");
+            }
+        }
+
+        // Find the rootview and make it invisible until we're done loading
         rootView = inflater.inflate(R.layout.fragment_detail, container, false);
+        rootView.setVisibility(View.INVISIBLE);
 
         // Save references to all items
         poster = (ImageView) rootView.findViewById(R.id.detail_picture);
@@ -123,10 +153,14 @@ public class DetailFragment extends Fragment implements LoaderManager.LoaderCall
 
 
         // Button to get to review fragment on tablets
-        reviewbutton.setOnClickListener(new View.OnClickListener(){
+        reviewbutton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                ((CallbackDetail) getActivity()).reviewButtonSelected(movieUri);
+                if (mTwoPane) {
+                    callBackDetail.reviewButtonSelected(movieUri);
+                } else {
+                    myCallBack.clickOnReviews();
+                }
             }
         });
 
@@ -136,7 +170,7 @@ public class DetailFragment extends Fragment implements LoaderManager.LoaderCall
             public void onClick(View v) {
 
                 // If it's already a favorite, delete it
-                if(isFavorite){
+                if (isFavorite) {
                     getActivity().getContentResolver().delete(MovieContract.FavoriteEntry.CONTENT_URI,
                             MovieContract.FavoriteEntry._ID + " = ?", new String[]{movieId});
                     // Change the star
@@ -163,18 +197,27 @@ public class DetailFragment extends Fragment implements LoaderManager.LoaderCall
         return rootView;
     }
 
+
     /**
-     * Allows user to get to review fragment on tablets
+     * Allows user to get to review fragment on tablets (two pane mode)
      */
     public interface CallbackDetail {
         /**
          * Callback method implemented in activity
          */
-        public void reviewButtonSelected(Uri movieUri);
+        void reviewButtonSelected(Uri movieUri);
+    }
+
+    /**
+     * Allows users to get to the review fragment in one pane mode
+     */
+    public interface CallBackInterface {
+        void clickOnReviews();
     }
 
     /**
      * Set the loader when the activity starts
+     *
      * @param savedInstanceState
      */
     @Override
@@ -185,6 +228,7 @@ public class DetailFragment extends Fragment implements LoaderManager.LoaderCall
 
     /**
      * When the loader is created, get a cursor from the database pointing to the movie info
+     *
      * @param i
      * @param bundle
      * @return
@@ -205,14 +249,13 @@ public class DetailFragment extends Fragment implements LoaderManager.LoaderCall
 
     /**
      * Use the cursor from the database to load all the movie information into the elements
+     *
      * @param cursorLoader
      * @param data
      */
     @Override
     public void onLoadFinished(Loader<Cursor> cursorLoader, Cursor data) {
-        Log.v(LOG_TAG, "INSIDE THE ONLOADFINISHED METOD");
         if (data != null && data.moveToFirst()) {
-            Log.v(LOG_TAG, "DATA IS NOT NULL");
             poster_path = data.getString(COL_POSTER_PATH);
             title_text = data.getString(COL_TITLE);
             release_text = data.getString(COL_RELEASE_DATE);
@@ -227,19 +270,19 @@ public class DetailFragment extends Fragment implements LoaderManager.LoaderCall
             Cursor c;
             String sortSetting = PreferenceManager.getDefaultSharedPreferences(getActivity()).getString("order", getString(R.string.order_pop_desc));
             // If the sort settings is favorites, movie has to be a favorite so select yellow star
-            if(sortSetting.equals(getString(R.string.order_favorites))){
+            if (sortSetting.equals(getString(R.string.order_favorites))) {
                 favoriteStar.setImageResource(R.drawable.ic_star_border_white_24dp_selected);
                 isFavorite = true;
             }
             //Otherwise, determine if the movie is in the favorites database
-            else{
+            else {
                 c = getActivity().getContentResolver().query(MovieContract.FavoriteEntry.CONTENT_URI,
                         new String[]{MovieContract.FavoriteEntry._ID},
                         MovieContract.FavoriteEntry.TABLE_NAME + "." + MovieContract.FavoriteEntry._ID + " = ?",
                         new String[]{movieId},
                         null);
                 // If it is in the DB, set star yellow
-                if(c.getCount() > 0) {
+                if (c.getCount() > 0) {
                     favoriteStar.setImageResource(R.drawable.ic_star_border_white_24dp_selected);
                     isFavorite = true;
                 }
@@ -256,12 +299,16 @@ public class DetailFragment extends Fragment implements LoaderManager.LoaderCall
             release.setText(release_text);
             vote.setText(vote_text);
             overview.setText(overview_text);
+
+            // After everything is loaded, make the rootview visible
+            rootView.setVisibility(View.VISIBLE);
         }
 
     }
 
     @Override
     public void onLoaderReset(Loader<Cursor> loader) {
+        // Not used
     }
 
 }
